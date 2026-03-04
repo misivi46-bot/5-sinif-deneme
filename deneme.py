@@ -1,240 +1,202 @@
-import tkinter as tk
-from tkinter import messagebox
+import streamlit as st
+import time
 import random
+from datetime import datetime, timedelta
 
-# 5. Sınıf MEB Müfredatı Örnek Konuları
-MEB_KONULARI = {
-    "Türkçe": ["Sözcükte Anlam", "Cümlede Anlam", "Paragrafta Anlam", "Yazım Kuralları", "Noktalama İşaretleri"],
-    "Sosyal Bilgiler": ["Birey ve Toplum", "Kültür ve Miras", "İnsanlar, Yerler ve Çevreler", "Bilim, Teknoloji ve Toplum"],
-    "Matematik": ["Doğal Sayılar", "Kesirler", "Ondalık Gösterim", "Yüzdeler", "Temel Geometrik Kavramlar"],
-    "Fen Bilgisi": ["Güneş, Dünya ve Ay", "Canlılar Dünyası", "Kuvvetin Ölçülmesi", "Madde ve Değişim", "Işığın Yayılması"],
-    "İngilizce": ["Hello!", "My Town", "Games and Hobbies", "Health", "Movies"],
-    "Din Kültürü": ["Allah İnancı", "Ramazan ve Oruç", "Adap ve Nezaket", "Hz. Muhammed ve Aile Hayatı"]
+# --- YAPILANDIRMA VE STİL ---
+st.set_page_config(page_title="5. Sınıf LGS Deneme Sınavı", layout="wide")
+
+# Sağ tarafta yüzen (sticky) sayaç için özel CSS
+st.markdown("""
+    <style>
+    .fixed-timer {
+        position: fixed;
+        top: 50%;
+        right: 20px;
+        transform: translateY(-50%);
+        background-color: #f0f2f6;
+        padding: 20px;
+        border-radius: 15px;
+        border: 2px solid #ff4b4b;
+        z-index: 999;
+        text-align: center;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+    }
+    .stRadio > label { font-size: 1.2rem; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- VERİ YAPILARI (MEB MÜFREDATI) ---
+DERSLER = {
+    "Türkçe": {"soru": 15, "katsayi": 4, "konular": ["Sözcükte Anlam", "Cümlede Anlam", "Paragraf", "Yazım Kuralları", "Noktalama"]},
+    "Matematik": {"soru": 15, "katsayi": 4, "konular": ["Doğal Sayılar", "Kesirler", "Ondalık Gösterim", "Yüzdeler", "Geometri"]},
+    "Fen Bilgisi": {"soru": 10, "katsayi": 4, "konular": ["Güneş Dünya Ay", "Canlılar", "Kuvvetin Ölçülmesi", "Madde ve Değişim"]},
+    "Sosyal Bilgiler": {"soru": 10, "katsayi": 1, "konular": ["Birey ve Toplum", "Kültür ve Miras", "İnsanlar ve Yerler"]},
+    "İngilizce": {"soru": 10, "katsayi": 1, "konular": ["Hello!", "My Town", "Games and Hobbies", "Health"]},
+    "Din Kültürü": {"soru": 10, "katsayi": 1, "konular": ["Allah İnancı", "Ramazan ve Oruç", "Adap ve Nezaket"]}
 }
 
-DERS_DAGILIMI = {
-    "Türkçe": {"soru_sayisi": 15, "katsayi": 4},
-    "Matematik": {"soru_sayisi": 15, "katsayi": 4},
-    "Fen Bilgisi": {"soru_sayisi": 10, "katsayi": 4},
-    "Sosyal Bilgiler": {"soru_sayisi": 10, "katsayi": 1},
-    "İngilizce": {"soru_sayisi": 10, "katsayi": 1},
-    "Din Kültürü": {"soru_sayisi": 10, "katsayi": 1}
-}
+# --- SESSION STATE (DURUM YÖNETİMİ) ---
+if 'sinav_basladi' not in st.session_state:
+    st.session_state.sinav_basladi = False
+if 'sorular' not in st.session_state:
+    st.session_state.sorular = []
+if 'cevaplar' not in st.session_state:
+    st.session_state.cevaplar = {}
+if 'bitis_zamani' not in st.session_state:
+    st.session_state.bitis_zamani = None
 
-class SinavUygulamasi:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("5. Sınıf Deneme Sınavı")
-        self.root.geometry("900x600")
-        
-        self.sorular = []
-        self.kullanici_cevaplari = {}
-        self.su_anki_soru_index = 0
-        self.kalan_sure = 100 * 60  # 100 dakika
-        self.zamanlayici_id = None
-        
-        self.zorluk_ekrani_olustur()
+# --- FONKSİYONLAR ---
+def soru_olustur(zorluk):
+    soru_listesi = []
+    id_sayac = 0
+    for ders, bilgi in DERSLER.items():
+        for i in range(bilgi["soru"]):
+            konu = random.choice(bilgi["konular"])
+            soru_listesi.append({
+                "id": id_sayac,
+                "ders": ders,
+                "konu": konu,
+                "soru_metni": f"[{zorluk}] {ders} dersi {konu} konusu ile ilgili hazırlanan 5. sınıf sorusu.",
+                "secenekler": ["Seçenek A", "Seçenek B", "Seçenek C", "Seçenek D"],
+                "dogru": random.choice([0, 1, 2, 3])
+            })
+            id_sayac += 1
+    return soru_listesi
 
-    def soru_uret(self, zorluk):
-        """Seçilen zorluğa göre taslak sorular oluşturur."""
-        self.sorular = []
-        soru_no = 1
-        for ders, detay in DERS_DAGILIMI.items():
-            for _ in range(detay["soru_sayisi"]):
-                konu = random.choice(MEB_KONULARI[ders])
-                soru = {
-                    "no": soru_no,
-                    "ders": ders,
-                    "konu": konu,
-                    "soru_metni": f"({zorluk} Seviye) {ders} dersi, {konu} konusu ile ilgili örnek soru metnidir.\nAşağıdakilerden hangisi doğrudur?",
-                    "secenekler": ["A) Seçenek 1", "B) Seçenek 2", "C) Seçenek 3", "D) Seçenek 4"],
-                    "dogru_cevap": random.choice([0, 1, 2, 3])
-                }
-                self.sorular.append(soru)
-                soru_no += 1
+def sinavi_baslat(zorluk):
+    st.session_state.sorular = soru_olustur(zorluk)
+    st.session_state.cevaplar = {i: None for i in range(70)}
+    st.session_state.bitis_zamani = datetime.now() + timedelta(minutes=100)
+    st.session_state.sinav_basladi = True
 
-    def zorluk_ekrani_olustur(self):
-        self.temizle()
-        frame = tk.Frame(self.root)
-        frame.pack(expand=True)
-        
-        tk.Label(frame, text="Deneme Sınavına Hoş Geldiniz", font=("Arial", 20, "bold")).pack(pady=20)
-        tk.Label(frame, text="Lütfen sınav zorluk derecesini seçin:", font=("Arial", 14)).pack(pady=10)
-        
-        tk.Button(frame, text="Kolay", width=20, font=("Arial", 12), command=lambda: self.sinavi_baslat("Kolay")).pack(pady=5)
-        tk.Button(frame, text="Orta", width=20, font=("Arial", 12), command=lambda: self.sinavi_baslat("Orta")).pack(pady=5)
-        tk.Button(frame, text="Zor", width=20, font=("Arial", 12), command=lambda: self.sinavi_baslat("Zor")).pack(pady=5)
-
-    def sinavi_baslat(self, zorluk):
-        self.soru_uret(zorluk)
-        self.kullanici_cevaplari = {i: -1 for i in range(len(self.sorular))}  # -1 boş bırakılmış demek
-        self.su_anki_soru_index = 0
-        self.kalan_sure = 100 * 60
-        self.arayuzu_olustur()
-        self.zamanlayiciyi_baslat()
-        self.soruyu_goster()
-
-    def arayuzu_olustur(self):
-        self.temizle()
-        
-        # Ana Bölme Düzeni
-        self.sol_frame = tk.Frame(self.root, padx=20, pady=20)
-        self.sol_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        self.sag_frame = tk.Frame(self.root, width=200, bg="#f0f0f0", relief=tk.RAISED, borderwidth=2)
-        self.sag_frame.pack(side=tk.RIGHT, fill=tk.Y)
-        self.sag_frame.pack_propagate(False)
-
-        # Sağ Taraf - Sayaç (Sayfanın sağ orta kısmı)
-        ortala_frame = tk.Frame(self.sag_frame, bg="#f0f0f0")
-        ortala_frame.pack(expand=True)
-        
-        tk.Label(ortala_frame, text="Kalan Süre", font=("Arial", 14), bg="#f0f0f0").pack()
-        self.sure_etiketi = tk.Label(ortala_frame, text="100:00", font=("Arial", 24, "bold"), fg="red", bg="#f0f0f0")
-        self.sure_etiketi.pack(pady=10)
-        
-        tk.Button(ortala_frame, text="Sınavı Bitir", font=("Arial", 12), bg="#ff4c4c", fg="white", command=self.sinavi_bitir).pack(pady=30)
-
-        # Sol Taraf - Soru Alanı
-        self.ders_etiketi = tk.Label(self.sol_frame, text="", font=("Arial", 14, "italic"), fg="blue")
-        self.ders_etiketi.pack(anchor="w")
-        
-        self.soru_etiketi = tk.Label(self.sol_frame, text="", font=("Arial", 16), wraplength=600, justify="left")
-        self.soru_etiketi.pack(anchor="w", pady=20)
-        
-        self.secim_degiskeni = tk.IntVar()
-        self.secenek_butonlari = []
-        for i in range(4):
-            rb = tk.Radiobutton(self.sol_frame, text="", variable=self.secim_degiskeni, value=i, font=("Arial", 14), command=self.cevabi_kaydet)
-            rb.pack(anchor="w", pady=5)
-            self.secenek_butonlari.append(rb)
-            
-        # Alt Navigasyon
-        nav_frame = tk.Frame(self.sol_frame)
-        nav_frame.pack(fill=tk.X, pady=40)
-        
-        self.btn_onceki = tk.Button(nav_frame, text="<< Önceki Soru", font=("Arial", 12), command=self.onceki_soru)
-        self.btn_onceki.pack(side=tk.LEFT)
-        
-        self.btn_sonraki = tk.Button(nav_frame, text="Sonraki Soru >>", font=("Arial", 12), command=self.sonraki_soru)
-        self.btn_sonraki.pack(side=tk.RIGHT)
-
-    def zamanlayiciyi_baslat(self):
-        dakika = self.kalan_sure // 60
-        saniye = self.kalan_sure % 60
-        self.sure_etiketi.config(text=f"{dakika:02d}:{saniye:02d}")
-        
-        if self.kalan_sure > 0:
-            self.kalan_sure -= 1
-            self.zamanlayici_id = self.root.after(1000, self.zamanlayiciyi_baslat)
+def puan_hesapla():
+    analiz = {ders: {"D": 0, "Y": 0, "B": 0, "Konular": set()} for ders in DERSLER.keys()}
+    for i, soru in enumerate(st.session_state.sorular):
+        cvp = st.session_state.cevaplar[i]
+        ders = soru["ders"]
+        if cvp is None:
+            analiz[ders]["B"] += 1
+            analiz[ders]["Konular"].add(soru["konu"])
+        elif cvp == soru["secenekler"][soru["dogru"]]:
+            analiz[ders]["D"] += 1
         else:
-            self.sinavi_bitir(otomatik=True)
+            analiz[ders]["Y"] += 1
+            analiz[ders]["Konular"].add(soru["konu"])
+    
+    # LGS Puan Formülü (Tahmini)
+    toplam_agirlikli_net = 0
+    for ders, sonuclar in analiz.items():
+        net = sonuclar["D"] - (sonuclar["Y"] / 3.0)
+        toplam_agirlikli_net += max(0, net) * DERSLER[ders]["katsayi"]
+    
+    # 5. Sınıf LGS Projeksiyonu: 194 (Taban) + (Netler * Katsayı)
+    final_puan = 194 + (toplam_agirlikli_net / 190) * 306
+    return analiz, min(500, final_puan)
 
-    def soruyu_goster(self):
-        soru = self.sorular[self.su_anki_soru_index]
-        self.ders_etiketi.config(text=f"{soru['ders']} - Soru {soru['no']}/70")
-        self.soru_etiketi.config(text=soru['soru_metni'])
-        
-        self.secim_degiskeni.set(self.kullanici_cevaplari[self.su_anki_soru_index])
-        
-        for i in range(4):
-            self.secenek_butonlari[i].config(text=soru['secenekler'][i])
+# --- ARAYÜZ ---
+
+# 1. GİRİŞ EKRANI
+if not st.session_state.sinav_basladi:
+    st.title("🎯 5. Sınıf Deneme Sınavı Portalı")
+    st.write("MEB Yeni Müfredata Uygun - 70 Soru - 100 Dakika")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("🟢 KOLAY SEVİYE", use_container_width=True):
+            sinavi_baslat("Kolay")
+            st.rerun()
+    with col2:
+        if st.button("🟡 ORTA SEVİYE", use_container_width=True):
+            sinavi_baslat("Orta")
+            st.rerun()
+    with col3:
+        if st.button("🔴 ZOR SEVİYE", use_container_width=True):
+            sinavi_baslat("Zor")
+            st.rerun()
+
+# 2. SINAV EKRANI
+else:
+    # Sayacı Göster (Sağ Orta)
+    kalan_sure = st.session_state.bitis_zamani - datetime.now()
+    dakika = int(kalan_sure.total_seconds() // 60)
+    saniye = int(kalan_sure.total_seconds() % 60)
+    
+    if kalan_sure.total_seconds() <= 0:
+        st.error("Süre Doldu! Sınav Sonlandırılıyor...")
+        time.sleep(2)
+        st.session_state.sinav_basladi = "BİTTİ"
+        st.rerun()
+
+    st.markdown(f"""
+        <div class="fixed-timer">
+            <h4 style='margin:0; color:#333;'>KALAN SÜRE</h4>
+            <h2 style='margin:0; color:#ff4b4b;'>{dakika:02d}:{saniye:02d}</h2>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Soru Gezinme
+    st.title("📝 Sınav Uygulaması")
+    
+    # Derslere göre tablar
+    tabs = st.tabs(list(DERSLER.keys()))
+    
+    soru_index = 0
+    for idx, ders_adi in enumerate(DERSLER.keys()):
+        with tabs[idx]:
+            st.subheader(f"{ders_adi} Bölümü")
+            ders_sorulari = [s for s in st.session_state.sorular if s["ders"] == ders_adi]
             
-        self.btn_onceki.config(state=tk.NORMAL if self.su_anki_soru_index > 0 else tk.DISABLED)
-        self.btn_sonraki.config(state=tk.NORMAL if self.su_anki_soru_index < len(self.sorular) - 1 else tk.DISABLED)
-
-    def cevabi_kaydet(self):
-        self.kullanici_cevaplari[self.su_anki_soru_index] = self.secim_degiskeni.get()
-
-    def onceki_soru(self):
-        if self.su_anki_soru_index > 0:
-            self.su_anki_soru_index -= 1
-            self.soruyu_goster()
-
-    def sonraki_soru(self):
-        if self.su_anki_soru_index < len(self.sorular) - 1:
-            self.su_anki_soru_index += 1
-            self.soruyu_goster()
-
-    def sinavi_bitir(self, otomatik=False):
-        if not otomatik:
-            cevap = messagebox.askyesno("Sınavı Bitir", "Sınavı bitirmek istediğinize emin misiniz?")
-            if not cevap:
-                return
+            for s in ders_sorulari:
+                key = f"soru_{s['id']}"
+                st.write(f"**Soru {soru_index + 1}:** {s['soru_metni']}")
                 
-        if self.zamanlayici_id:
-            self.root.after_cancel(self.zamanlayici_id)
-            
-        self.sonuclari_hesapla()
+                # Cevap seçimi
+                secim = st.radio(
+                    f"Cevabınızı seçin ({s['id']}):",
+                    s["secenekler"],
+                    index=None if st.session_state.cevaplar[s['id']] is None else s["secenekler"].index(st.session_state.cevaplar[s['id']]),
+                    key=key,
+                    label_visibility="collapsed"
+                )
+                st.session_state.cevaplar[s['id']] = secim
+                soru_index += 1
+                st.divider()
 
-    def sonuclari_hesapla(self):
-        self.temizle()
-        
-        istatistikler = {ders: {"dogru": 0, "yanlis": 0, "bos": 0, "net": 0.0} for ders in DERS_DAGILIMI.keys()}
-        eksik_konular = set()
-        
-        toplam_dogru = 0
-        toplam_yanlis = 0
-        toplam_bos = 0
+    if st.button("SINAVI BİTİR VE SONUÇLARI GÖR", type="primary", use_container_width=True):
+        st.session_state.sinav_basladi = "BİTTİ"
+        st.rerun()
 
-        # Doğru, yanlış, boş ve konu analizi
-        for i, soru in enumerate(self.sorular):
-            ders = soru["ders"]
-            verilen_cevap = self.kullanici_cevaplari[i]
-            
-            if verilen_cevap == -1:
-                istatistikler[ders]["bos"] += 1
-                toplam_bos += 1
-                eksik_konular.add(f"{ders}: {soru['konu']}")
-            elif verilen_cevap == soru["dogru_cevap"]:
-                istatistikler[ders]["dogru"] += 1
-                toplam_dogru += 1
-            else:
-                istatistikler[ders]["yanlis"] += 1
-                toplam_yanlis += 1
-                eksik_konular.add(f"{ders}: {soru['konu']}")
+# 3. SONUÇ EKRANI
+if st.session_state.sinav_basladi == "BİTTİ":
+    st.balloons()
+    st.title("📊 Sınav Sonuç Analizi")
+    
+    analiz, puan = puan_hesapla()
+    
+    st.metric(label="Tahmini LGS Puanı (500 Üzerinden)", value=f"{puan:.2f}")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.write("### Ders Bazlı Başarı Durumu")
+        for ders, veriler in analiz.items():
+            st.write(f"**{ders}:** {veriler['D']} Doğru, {veriler['Y']} Yanlış, {veriler['B']} Boş")
+            st.progress(veriler['D'] / DERSLER[ders]['soru'])
 
-        # 3 Yanlış 1 Doğruyu Götürür Kuralı ve LGS Puanı (500 üzerinden)
-        toplam_agirlikli_net = 0
-        for ders, data in istatistikler.items():
-            net = data["dogru"] - (data["yanlis"] / 3.0)
-            data["net"] = max(0, net)
-            toplam_agirlikli_net += data["net"] * DERS_DAGILIMI[ders]["katsayi"]
-            
-        # LGS Taban Puanı 194, Maksimum Ağırlıklı Net Puanı: 190 (Sınav max 500 Puan)
-        # Formül: 194 + (Alınan Ağırlıklı Net / 190) * 306
-        lgs_puani = 194 + (toplam_agirlikli_net / 190.0) * 306
-        if toplam_dogru == 0 and toplam_yanlis == 0:
-            lgs_puani = 0 # Hiçbir şey işaretlenmediyse 0
-
-        self.sonuc_ekrani_goster(toplam_dogru, toplam_yanlis, toplam_bos, lgs_puani, eksik_konular)
-
-    def sonuc_ekrani_goster(self, dogru, yanlis, bos, puan, konular):
-        frame = tk.Frame(self.root, padx=20, pady=20)
-        frame.pack(fill=tk.BOTH, expand=True)
+    with col2:
+        st.write("### 📚 Çalışman Gereken Konular")
+        eksik_konular = []
+        for ders in analiz:
+            for konu in analiz[ders]["Konular"]:
+                eksik_konular.append(f"{ders} - {konu}")
         
-        tk.Label(frame, text="Sınav Sonucu", font=("Arial", 22, "bold")).pack(pady=10)
-        tk.Label(frame, text=f"LGS Tahmini Puanı: {puan:.2f} / 500", font=("Arial", 18, "bold"), fg="green").pack(pady=10)
-        
-        ozet = f"Toplam Doğru: {dogru}   |   Toplam Yanlış: {yanlis}   |   Boş Bırakılan: {bos}"
-        tk.Label(frame, text=ozet, font=("Arial", 14)).pack(pady=10)
-        
-        if konular:
-            tk.Label(frame, text="Tekrar Edilmesi Önerilen Konular:", font=("Arial", 14, "bold"), fg="red").pack(pady=10)
-            listbox = tk.Listbox(frame, font=("Arial", 12), width=60, height=12)
-            listbox.pack()
-            for konu in sorted(listbox_items := list(konular)):
-                listbox.insert(tk.END, f"• {konu}")
+        if eksik_konular:
+            for k in eksik_konular:
+                st.warning(k)
         else:
-            tk.Label(frame, text="Tebrikler! Eksik konunuz bulunmamaktadır.", font=("Arial", 14, "bold"), fg="green").pack(pady=20)
-            
-        tk.Button(frame, text="Yeni Sınav Başlat", font=("Arial", 12), command=self.zorluk_ekrani_olustur).pack(pady=20)
+            st.success("Harika! Hiç eksiğin görünmüyor.")
 
-    def temizle(self):
-        for widget in self.root.winfo_children():
-            widget.destroy()
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = SinavUygulamasi(root)
-    root.mainloop()
+    if st.button("YENİ SINAVA BAŞLA"):
+        st.session_state.clear()
+        st.rerun()
